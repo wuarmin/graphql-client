@@ -2,7 +2,6 @@
 
 require "graphql/client/error"
 require "graphql/client/schema/base_type"
-require "graphql/client/schema/object_type"
 
 module GraphQL
   class Client
