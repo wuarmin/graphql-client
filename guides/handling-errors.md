@@ -121,6 +121,33 @@ The list could also be partial populated and truncated because of a timeout.
 <% end %>
 ```
 
+## HTTP transport errors
+
+The HTTP adapter defaults to returning GraphQL-style errors for HTTP statuses
+other than 200 and 400. Opt into exceptions to distinguish these failures from
+GraphQL errors without implementing a custom adapter:
+
+```ruby
+HTTP = GraphQL::Client::HTTP.new("https://example.com/graphql", strict: true)
+Client = GraphQL::Client.new(schema: schema, execute: HTTP)
+
+begin
+  response = Client.query(Query)
+rescue GraphQL::Client::HTTP::InvalidResponseError => error
+  # HTTP 200/400 with invalid JSON, or a JSON value that is not an object
+  # containing at least one of "data" or "errors".
+  warn "Invalid response: #{error.status}"
+rescue GraphQL::Client::HTTP::HTTPError => error
+  warn "HTTP failure: #{error.status}"
+  # error.response is the original Net::HTTPResponse (headers and body included).
+end
+```
+
+`InvalidResponseError` inherits from `HTTPError`. Valid GraphQL results on HTTP
+200/400, including errors and partial data, are returned normally. Network and
+timeout exceptions continue to propagate unchanged. Omitting `strict: true`
+preserves the existing behavior, including `JSON::ParserError` for invalid JSON.
+
 ## See also
 
 * [graphql-js "path" field](https://github.com/graphql/graphql-js/blob/23592ad16868e06b1c003629759f905a77ab81a0/src/error/GraphQLError.js#L42-L48)

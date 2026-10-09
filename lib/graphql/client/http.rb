@@ -18,6 +18,24 @@ module GraphQL
     # adapter. This class exists for trivial stock usage and allows for minimal
     # request header configuration.
     class HTTP
+      # Public: An unexpected HTTP status, with the original response attached.
+      class HTTPError < StandardError
+        attr_reader :response
+
+        def initialize(response, message = "HTTP #{response.code} #{response.message}")
+          @response = response
+          super(message)
+        end
+
+        def status
+          response.code.to_i
+        end
+      end
+
+      # Public: A response that could not be decoded as a GraphQL result.
+      class InvalidResponseError < HTTPError
+      end
+
       # Public: Create HTTP adapter instance for a single GraphQL endpoint.
       #
       #   GraphQL::Client::HTTP.new("http://graphql-swapi.parseapp.com/") do
@@ -27,9 +45,11 @@ module GraphQL
       #   end
       #
       # uri - String endpoint URI
+      # strict - Raise HTTPError or InvalidResponseError for transport failures
       # block - Optional block to configure class
-      def initialize(uri, &block)
+      def initialize(uri, strict: false, &block)
         @uri = URI.parse(uri)
+        @strict = strict
         singleton_class.class_eval(&block) if block_given?
       end
 
@@ -79,8 +99,9 @@ module GraphQL
         @last_response = response.to_hash
         case response
         when Net::HTTPOK, Net::HTTPBadRequest
-          JSON.parse(response.body)
+          parse_response(response)
         else
+          raise HTTPError.new(response) if @strict
           { "errors" => [{ "message" => "#{response.code} #{response.message}" }] }
         end
       end
@@ -92,6 +113,19 @@ module GraphQL
         Net::HTTP.new(uri.host, uri.port).tap do |client|
           client.use_ssl = uri.scheme == "https"
         end
+      end
+
+      private
+
+      def parse_response(response)
+        result = JSON.parse(@strict ? response.body.to_s : response.body)
+        if @strict && !(result.is_a?(Hash) && (result.key?("data") || result.key?("errors")))
+          raise InvalidResponseError.new(response, "Invalid GraphQL response (HTTP #{response.code})")
+        end
+        result
+      rescue JSON::ParserError
+        raise unless @strict
+        raise InvalidResponseError.new(response, "Non-JSON response (HTTP #{response.code})")
       end
     end
   end
